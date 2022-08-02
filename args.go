@@ -10,8 +10,8 @@ var Width, Height, Rate int
 var OutFormat OutputFormat
 
 func handleArgs() {
-	flag.IntVar(&Width, "w", 8, "width of video")
-	flag.IntVar(&Height, "h", 8, "height of video")
+	flag.IntVar(&Width, "w", 256, "width of video")
+	flag.IntVar(&Height, "h", 256, "height of video")
 	flag.IntVar(&Rate, "r", 10, "frame rate of video")
 	flag.Var(&OutFormat, "f", "`format` to output: raw, avi, webm")
 	flag.Parse()

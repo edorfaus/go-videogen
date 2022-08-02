@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
 	"io"
 	"os"
 	"os/exec"
@@ -32,6 +33,12 @@ func run() error {
 
 	frames := make(chan *frameloop.Frame, 1)
 
+	// Set up the animation
+	gb, pos, err := setupAnimation()
+	if err != nil {
+		return err
+	}
+
 	// Set up output video stream encoding
 	rawVideo, ffmpeg, err := encoder(ctx, os.Stdout)
 	if err != nil {
@@ -42,18 +49,20 @@ func run() error {
 	fl := frameloop.New(ctx, rawVideo, frames, Rate)
 	defer fl.Stop()
 
+	gb.Draw(frame, pos, draw.Src)
 	frames <- frame
 
 	// Run the animation
-	c := color.NRGBA{0, 0, 0, 255}
 	for i := 0; i < Rate*10; i++ {
 		select {
 		case <-fl.Done():
 			break
 		case <-fl.Sync():
-			frame.Set(1, 1, c)
+			gb.CycleColor(256 / Rate)
+			gb.CycleGradient(gb.Bounds().Dy() / (Rate * 2))
+
+			gb.Draw(frame, pos, draw.Src)
 			//frames <- frame
-			c = anim.ColorCycle(c)
 		}
 	}
 
@@ -147,4 +156,29 @@ func encoder(
 	}
 
 	return input, cmd, nil
+}
+
+func setupAnimation() (*anim.GradBox, image.Rectangle, error) {
+	pos := image.Rect(Width/4, Height/4, Width, Height)
+
+	col := color.NRGBA{0, 255, 0, 255}
+	sz := pos.Min
+	switch {
+	case sz.X < 4:
+		sz.X = Width
+		pos.Min.X = 0
+	case sz.X < 8:
+		sz.X = Width / 2
+	}
+	switch {
+	case sz.Y < 4:
+		sz.Y = Height
+		pos.Min.Y = 0
+	case sz.Y < 8:
+		sz.Y = Height / 2
+	}
+
+	gb, err := anim.NewGradBox(sz.X, sz.Y, col)
+
+	return gb, pos, err
 }
