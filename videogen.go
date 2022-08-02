@@ -104,7 +104,7 @@ func encoder(
 		"-video_size", fmt.Sprintf("%vx%v", Width, Height),
 
 		// attempt to avoid buffering latency
-		"-avioflags", "direct",
+		//"-avioflags", "direct", // this seems to cause missing data
 		"-fflags", "nobuffer",
 		"-probesize", "32",
 		"-analyzeduration", "0",
