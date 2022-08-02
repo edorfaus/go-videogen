@@ -8,9 +8,9 @@ import (
 	"image/draw"
 	"io"
 	"os"
-	"os/exec"
 
 	"github.com/edorfaus/go-videogen/anim"
+	"github.com/edorfaus/go-videogen/encoder"
 	"github.com/edorfaus/go-videogen/frameloop"
 )
 
@@ -40,7 +40,7 @@ func run() error {
 	}
 
 	// Set up output video stream encoding
-	rawVideo, ffmpeg, err := encoder(ctx, os.Stdout)
+	rawVideo, err := setupEncoder(ctx, os.Stdout)
 	if err != nil {
 		return err
 	}
@@ -73,89 +73,28 @@ func run() error {
 		return err
 	}
 
-	// Shut down the encoder, if necessary
-	if ffmpeg != nil {
-		if err := rawVideo.Close(); err != nil {
-			return err
-		}
-		if err := ffmpeg.Wait(); err != nil {
-			return err
-		}
+	// Shut down the encoder
+	if err := rawVideo.Close(); err != nil {
+		return err
 	}
 
 	return nil
 }
 
-func encoder(
+func setupEncoder(
 	ctx context.Context, target io.WriteCloser,
-) (io.WriteCloser, *exec.Cmd, error) {
-	if OutFormat == OutputRaw {
-		return target, nil, nil
-	}
-
-	args := []string{
-		"-hide_banner", "-nostdin",
-
-		// input args
-
-		"-an", // no audio
-		"-f", "rawvideo", "-pixel_format", "rgba",
-		"-framerate", fmt.Sprintf("%v", Rate),
-		"-video_size", fmt.Sprintf("%vx%v", Width, Height),
-
-		// attempt to avoid buffering latency
-		//"-avioflags", "direct", // this seems to cause missing data
-		"-fflags", "nobuffer",
-		"-probesize", "32",
-		"-analyzeduration", "0",
-		"-fpsprobesize", "0",
-
-		// input file: stdin
-		"-i", "-",
-
-		// output args
-
-		// attempt to avoid buffering latency
-		"-avioflags", "direct",
-		"-fflags", "flush_packets",
-		"-flush_packets", "1",
-	}
+) (io.WriteCloser, error) {
 
 	switch OutFormat {
 	case OutputAvi:
-		// AVI with raw video - for max speed
-		args = append(args, "-f", "avi", "-c:v", "copy")
+		return encoder.FfmpegAviCopy(ctx, target, Width, Height, Rate)
 	case OutputWebM:
-		// WebM with VP9 - for smaller data, and maybe compatibility
-		args = append(args,
-			"-f", "webm", "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p",
-			// try to run quickly enough for realtime use
-			"-deadline", "realtime", "-quality", "realtime",
-		)
+		return encoder.FfmpegWebmVP9(ctx, target, Width, Height, Rate)
 	case OutputRaw:
-		panic("reached unreachable code (this was checked earlier)")
+		return target, nil
 	default:
-		panic(fmt.Sprintf("unexpected OutFormat: %v", OutFormat))
+		return nil, fmt.Errorf("unexpected OutFormat: %v", OutFormat)
 	}
-
-	// output file: stdout
-	args = append(args, "-")
-
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
-
-	cmd.Stdout = target
-	cmd.Stderr = os.Stderr
-
-	input, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if err := cmd.Start(); err != nil {
-		return nil, nil, err
-	}
-
-	return input, cmd, nil
 }
 
 func setupAnimation() (*anim.GradBox, image.Rectangle, error) {
