@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"image"
 	"image/color"
@@ -14,10 +13,6 @@ import (
 	"github.com/edorfaus/go-videogen/frameloop"
 )
 
-var Width, Height, Rate int
-
-var RawOutput bool
-
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
@@ -25,16 +20,8 @@ func main() {
 	}
 }
 
-func args() {
-	flag.IntVar(&Width, "w", 8, "width of video")
-	flag.IntVar(&Height, "h", 8, "height of video")
-	flag.IntVar(&Rate, "r", 10, "frame rate of video")
-	flag.BoolVar(&RawOutput, "raw", false, "write raw RGBA output")
-	flag.Parse()
-}
-
 func run() error {
-	args()
+	handleArgs()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -93,37 +80,59 @@ func run() error {
 func encoder(
 	ctx context.Context, target io.WriteCloser,
 ) (io.WriteCloser, *exec.Cmd, error) {
-	if RawOutput {
+	if OutFormat == OutputRaw {
 		return target, nil, nil
 	}
 
-	cmd := exec.CommandContext(
-		ctx, "ffmpeg",
+	args := []string{
 		"-hide_banner", "-nostdin",
 
 		// input args
+
 		"-an", // no audio
 		"-f", "rawvideo", "-pixel_format", "rgba",
 		"-framerate", fmt.Sprintf("%v", Rate),
 		"-video_size", fmt.Sprintf("%vx%v", Width, Height),
+
 		// attempt to avoid buffering latency
 		"-avioflags", "direct",
 		"-fflags", "nobuffer",
 		"-probesize", "32",
 		"-analyzeduration", "0",
 		"-fpsprobesize", "0",
+
 		// input file: stdin
 		"-i", "-",
 
 		// output args
-		"-f", "webm", "-pix_fmt", "yuva420p",
+
 		// attempt to avoid buffering latency
 		"-avioflags", "direct",
 		"-fflags", "flush_packets",
 		"-flush_packets", "1",
-		// output file: stdout
-		"-",
-	)
+	}
+
+	switch OutFormat {
+	case OutputAvi:
+		// AVI with raw video - for max speed
+		args = append(args, "-f", "avi", "-c:v", "copy")
+	case OutputWebM:
+		// WebM with VP9 - for smaller data, and maybe compatibility
+		args = append(args,
+			"-f", "webm", "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p",
+			// try to run quickly enough for realtime use
+			"-deadline", "realtime", "-quality", "realtime",
+		)
+	case OutputRaw:
+		panic("reached unreachable code (this was checked earlier)")
+	default:
+		panic(fmt.Sprintf("unexpected OutFormat: %v", OutFormat))
+	}
+
+	// output file: stdout
+	args = append(args, "-")
+
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 
 	cmd.Stdout = target
 	cmd.Stderr = os.Stderr
