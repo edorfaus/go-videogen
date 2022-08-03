@@ -118,7 +118,7 @@ func (fl *FrameLoop) frameLoop(ctx context.Context, frameRate int) {
 	}
 }
 
-func (fl *FrameLoop) sendFrame(frame *image.NRGBA) {
+func (fl *FrameLoop) sendFrame(frame *Frame) {
 	b := frame.Bounds()
 	w, h := b.Dx()*4, b.Dy()
 	i := frame.PixOffset(b.Min.X, b.Min.Y)

@@ -65,7 +65,7 @@ func run() error {
 
 	gb.Draw(frame, pos, draw.Src)
 	subFrame := frame.SubImage(image.Rect(0, 0, Width, Height))
-	frames <- subFrame.(*image.NRGBA)
+	frames <- subFrame.(*frameloop.Frame)
 
 	// Run the animation
 	frameCount := int64(time.Duration(Rate) * Duration / time.Second)
@@ -84,7 +84,7 @@ func run() error {
 			x = 7 - x
 		}
 		f := frame.SubImage(image.Rect(x, 0, Width+x, Height))
-		frames <- f.(*image.NRGBA)
+		frames <- f.(*frameloop.Frame)
 	}
 
 	// Wait for the last frame to have been sent
