@@ -14,26 +14,41 @@ type Frame = image.NRGBA
 type FrameLoop struct {
 	target io.Writer
 	frames <-chan *Frame
+	sent   chan<- *Frame
 
 	cancel func()
 	done   chan struct{}
-
-	sync chan struct{}
 
 	mu  sync.Mutex
 	err error
 }
 
+// New creates a new frame loop.
+//
+// The frames channel is used to get the frames to be written to the
+// target writer. The given frameRate will be maintained by writing the
+// last received frame again if a new frame was not received in time.
+//
+// If the sent channel is not nil, then every written frame will be sent
+// to it right after it was written. If the same frame was written again
+// due to not receiving a new one, then that frame will be sent again.
+// However, a full sent channel will lose frames (non-blocking sends).
+//
+// Every received frame will be written at least once before a new frame
+// is accepted.
+//
+// The loop will start when the first frame is received, and will end
+// after ctx is done, or Stop() is called.
 func New(
-	ctx context.Context, target io.Writer, frames <-chan *Frame,
-	frameRate int,
+	ctx context.Context, target io.Writer, frameRate int,
+	frames <-chan *Frame, sent chan<- *Frame,
 ) *FrameLoop {
 	c, cancel := context.WithCancel(ctx)
 	fl := &FrameLoop{
 		target: target,
 		frames: frames,
+		sent:   sent,
 		cancel: cancel,
-		sync:   make(chan struct{}, 1),
 		done:   make(chan struct{}),
 	}
 	if frameRate < 1 {
@@ -98,17 +113,15 @@ func (fl *FrameLoop) sendFrame(frame *image.NRGBA) {
 	w, h := b.Dx()*4, b.Dy()
 	i := frame.PixOffset(b.Min.X, b.Min.Y)
 
+	// The frame might be a sub-image, in which case Pix contains extra
+	// data we have to skip, thus looping one write per line. However,
+	// if the frame is not a sub-image, then Pix contains exactly the
+	// data we want to send, so we can send everything in one write.
 	if i == 0 && frame.Stride == w && len(frame.Pix) == w*h {
-		// The frame is not a sub-image, Pix holds exactly what we want
-		if _, err := fl.target.Write(frame.Pix); err != nil {
-			fl.stop(err)
-			return
-		}
-		fl.sendSync()
-		return
+		w *= h
+		h = 1
 	}
 
-	// The frame is a sub-image, so Pix contains extra data we'll skip
 	for j := 0; j < h; j++ {
 		if _, err := fl.target.Write(frame.Pix[i : i+w]); err != nil {
 			fl.stop(err)
@@ -116,18 +129,11 @@ func (fl *FrameLoop) sendFrame(frame *image.NRGBA) {
 		}
 		i += frame.Stride
 	}
-	fl.sendSync()
-}
 
-func (fl *FrameLoop) sendSync() {
 	select {
-	case fl.sync <- struct{}{}:
+	case fl.sent <- frame:
 	default:
 	}
-}
-
-func (fl *FrameLoop) Sync() <-chan struct{} {
-	return fl.sync
 }
 
 func (fl *FrameLoop) Done() <-chan struct{} {

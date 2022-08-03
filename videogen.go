@@ -32,6 +32,7 @@ func run() error {
 	frame := image.NewNRGBA(image.Rect(0, 0, Width+4, Height))
 
 	frames := make(chan *frameloop.Frame, 1)
+	frameSent := make(chan *frameloop.Frame, 1)
 
 	// Set up the animation
 	gb, pos, err := setupAnimation()
@@ -46,7 +47,7 @@ func run() error {
 	}
 
 	// Start the frame output loop
-	fl := frameloop.New(ctx, rawVideo, frames, Rate)
+	fl := frameloop.New(ctx, rawVideo, Rate, frames, frameSent)
 	defer fl.Stop()
 
 	gb.Draw(frame, pos, draw.Src)
@@ -58,7 +59,7 @@ func run() error {
 		select {
 		case <-fl.Done():
 			break
-		case <-fl.Sync():
+		case <-frameSent:
 			gb.CycleColor(256 / Rate)
 			gb.CycleGradient(gb.Bounds().Dy() / (Rate * 2))
 
