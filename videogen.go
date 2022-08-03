@@ -29,7 +29,7 @@ func run() error {
 
 	fmt.Fprintf(os.Stderr, "WxH: %vx%v | frameRate: %v\n", Width, Height, Rate)
 
-	frame := image.NewNRGBA(image.Rect(0, 0, Width, Height))
+	frame := image.NewNRGBA(image.Rect(0, 0, Width+4, Height))
 
 	frames := make(chan *frameloop.Frame, 1)
 
@@ -50,7 +50,8 @@ func run() error {
 	defer fl.Stop()
 
 	gb.Draw(frame, pos, draw.Src)
-	frames <- frame
+	subFrame := frame.SubImage(image.Rect(0, 0, Width, Height))
+	frames <- subFrame.(*image.NRGBA)
 
 	// Run the animation
 	for i := 0; i < Rate*10; i++ {
@@ -62,7 +63,13 @@ func run() error {
 			gb.CycleGradient(gb.Bounds().Dy() / (Rate * 2))
 
 			gb.Draw(frame, pos, draw.Src)
-			//frames <- frame
+
+			x := i % 8
+			if x > 3 {
+				x = 7 - x
+			}
+			f := frame.SubImage(image.Rect(x, 0, Width+x, Height))
+			frames <- f.(*image.NRGBA)
 		}
 	}
 

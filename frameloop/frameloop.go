@@ -94,10 +94,32 @@ func (fl *FrameLoop) frameLoop(ctx context.Context, frameRate int) {
 }
 
 func (fl *FrameLoop) sendFrame(frame *image.NRGBA) {
-	if _, err := fl.target.Write(frame.Pix); err != nil {
-		fl.stop(err)
+	b := frame.Bounds()
+	w, h := b.Dx()*4, b.Dy()
+	i := frame.PixOffset(b.Min.X, b.Min.Y)
+
+	if i == 0 && frame.Stride == w && len(frame.Pix) == w*h {
+		// The frame is not a sub-image, Pix holds exactly what we want
+		if _, err := fl.target.Write(frame.Pix); err != nil {
+			fl.stop(err)
+			return
+		}
+		fl.sendSync()
 		return
 	}
+
+	// The frame is a sub-image, so Pix contains extra data we'll skip
+	for j := 0; j < h; j++ {
+		if _, err := fl.target.Write(frame.Pix[i : i+w]); err != nil {
+			fl.stop(err)
+			return
+		}
+		i += frame.Stride
+	}
+	fl.sendSync()
+}
+
+func (fl *FrameLoop) sendSync() {
 	select {
 	case fl.sync <- struct{}{}:
 	default:
