@@ -7,7 +7,7 @@ import (
 
 var Width, Height, Rate int
 
-var OutFormat OutputFormat
+var OutFormat = OutputAvi
 
 func handleArgs() {
 	flag.IntVar(&Width, "w", 256, "width of video")
@@ -20,7 +20,7 @@ func handleArgs() {
 type OutputFormat int
 
 const (
-	OutputAvi OutputFormat = iota
+	OutputAvi OutputFormat = iota + 1
 	OutputRaw
 	OutputWebM
 )
