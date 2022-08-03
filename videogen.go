@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -18,6 +19,12 @@ import (
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		if errors.Is(err, frameloop.ErrPanic) {
+			// If the panic was rethrown, the runtime might be about to
+			// print a stack trace and exit for us; we don't want to
+			// stop that by exiting too early, so sleep for a bit.
+			time.Sleep(time.Second)
+		}
 		os.Exit(1)
 	}
 }

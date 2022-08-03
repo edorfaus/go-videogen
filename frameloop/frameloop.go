@@ -63,8 +63,18 @@ func New(
 func (fl *FrameLoop) frameLoop(ctx context.Context, frameRate int) {
 	defer func() {
 		fl.mu.Lock()
+		defer fl.mu.Unlock()
 		close(fl.done)
-		fl.mu.Unlock()
+	}()
+	defer func() {
+		if v := recover(); v != nil {
+			fl.mu.Lock()
+			if fl.err == nil {
+				fl.err = PanicErr{"frame loop", v}
+			}
+			fl.mu.Unlock()
+			panic(v)
+		}
 	}()
 
 	var frame *Frame
