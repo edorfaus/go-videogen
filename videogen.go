@@ -8,6 +8,7 @@ import (
 	"image/draw"
 	"io"
 	"os"
+	"time"
 
 	"github.com/edorfaus/go-videogen/anim"
 	"github.com/edorfaus/go-videogen/encoder"
@@ -22,12 +23,17 @@ func main() {
 }
 
 func run() error {
-	handleArgs()
+	if err := handleArgs(); err != nil {
+		return err
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	fmt.Fprintf(os.Stderr, "WxH: %vx%v | frameRate: %v\n", Width, Height, Rate)
+	fmt.Fprintf(
+		os.Stderr, "WxH: %vx%v | frameRate: %v | duration: %v\n",
+		Width, Height, Rate, Duration,
+	)
 
 	frame := image.NewNRGBA(image.Rect(0, 0, Width+4, Height))
 
@@ -55,24 +61,27 @@ func run() error {
 	frames <- subFrame.(*image.NRGBA)
 
 	// Run the animation
-	for i := 0; i < Rate*10; i++ {
-		select {
-		case <-fl.Done():
+	frameCount := int64(time.Duration(Rate) * Duration / time.Second)
+	for i := int64(1); i < frameCount; i++ {
+		if fl.WaitFrame() == nil {
 			break
-		case <-frameSent:
-			gb.CycleColor(256 / Rate)
-			gb.CycleGradient(gb.Bounds().Dy() / (Rate * 2))
-
-			gb.Draw(frame, pos, draw.Src)
-
-			x := i % 8
-			if x > 3 {
-				x = 7 - x
-			}
-			f := frame.SubImage(image.Rect(x, 0, Width+x, Height))
-			frames <- f.(*image.NRGBA)
 		}
+
+		gb.CycleColor(256 / Rate)
+		gb.CycleGradient(gb.Bounds().Dy() / (Rate * 2))
+
+		gb.Draw(frame, pos, draw.Src)
+
+		x := int(i % 8)
+		if x > 3 {
+			x = 7 - x
+		}
+		f := frame.SubImage(image.Rect(x, 0, Width+x, Height))
+		frames <- f.(*image.NRGBA)
 	}
+
+	// Wait for the last frame to have been sent
+	fl.WaitFrame()
 
 	// Stop the frame loop, wait for it to be done
 	fl.Stop()

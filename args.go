@@ -3,18 +3,39 @@ package main
 import (
 	"flag"
 	"fmt"
+	"time"
 )
 
 var Width, Height, Rate int
 
 var OutFormat = OutputAvi
 
-func handleArgs() {
+var Duration time.Duration
+
+func handleArgs() (err error) {
 	flag.IntVar(&Width, "w", 256, "width of video")
 	flag.IntVar(&Height, "h", 256, "height of video")
 	flag.IntVar(&Rate, "r", 10, "frame rate of video")
 	flag.Var(&OutFormat, "f", "`format` to output: raw, avi, webm")
+	flag.DurationVar(
+		&Duration, "d", 10*time.Second, "duration of output video",
+	)
+
 	flag.Parse()
+
+	pos := func(v int, n string) {
+		if v <= 0 && err == nil {
+			err = fmt.Errorf("%s must be positive: %v", n, v)
+		}
+	}
+	pos(Width, "width")
+	pos(Height, "height")
+	pos(Rate, "frame rate")
+	if Duration <= 0 && err == nil {
+		err = fmt.Errorf("duration must be positive: %v", Duration)
+	}
+
+	return err
 }
 
 type OutputFormat int

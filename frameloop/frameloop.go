@@ -14,7 +14,7 @@ type Frame = image.NRGBA
 type FrameLoop struct {
 	target io.Writer
 	frames <-chan *Frame
-	sent   chan<- *Frame
+	sent   chan *Frame
 
 	cancel func()
 	done   chan struct{}
@@ -35,13 +35,13 @@ type FrameLoop struct {
 // However, a full sent channel will lose frames (non-blocking sends).
 //
 // Every received frame will be written at least once before a new frame
-// is accepted.
+// is accepted, unless the frame loop ends first.
 //
 // The loop will start when the first frame is received, and will end
-// after ctx is done, or Stop() is called.
+// after ctx is done, or Stop() is called, or a write error occurs.
 func New(
 	ctx context.Context, target io.Writer, frameRate int,
-	frames <-chan *Frame, sent chan<- *Frame,
+	frames <-chan *Frame, sent chan *Frame,
 ) *FrameLoop {
 	c, cancel := context.WithCancel(ctx)
 	fl := &FrameLoop{
@@ -136,14 +136,37 @@ func (fl *FrameLoop) sendFrame(frame *image.NRGBA) {
 	}
 }
 
+// WaitFrame waits for a frame to be returned by the frame loop, and
+// returns that frame. This returns nil if the frame loop exits before
+// another frame is returned, or if the returned frame was nil.
+func (fl *FrameLoop) WaitFrame() *Frame {
+	select {
+	case <-fl.done:
+		return nil
+	case frame := <-fl.sent:
+		return frame
+	}
+}
+
+// Done returns a channel that will be closed when the frame loop has
+// ended and will not write any more frames.
 func (fl *FrameLoop) Done() <-chan struct{} {
 	return fl.done
 }
 
+// Stop will cause the frame loop to end, and not write out any more
+// frames.
+//
+// Calling Stop may cause a received frame to not be written out, if the
+// time to write it out has not yet arrived. However, a frame that is
+// already being written will be completed before the loop is ended, to
+// avoid writing partial frames.
 func (fl *FrameLoop) Stop() {
 	fl.stop(nil)
 }
 
+// Err will return any error that occurred in the frame loop. It will be
+// valid once the frame loop has ended, and the Stop channel is closed.
 func (fl *FrameLoop) Err() error {
 	fl.mu.Lock()
 	err := fl.err
