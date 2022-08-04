@@ -175,6 +175,14 @@ func (fl *FrameLoop) Stop() {
 	fl.stop(nil)
 }
 
+// StopWait will cause the frame loop to end, wait for it to do so, and
+// return any error that occurred in the frame loop. See also Stop().
+func (fl *FrameLoop) StopWait() error {
+	fl.Stop()
+	<-fl.done
+	return fl.Err()
+}
+
 // Err will return any error that occurred in the frame loop. It will be
 // valid once the frame loop has ended, and the Stop channel is closed.
 func (fl *FrameLoop) Err() error {

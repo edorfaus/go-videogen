@@ -29,9 +29,15 @@ func main() {
 	}
 }
 
-func run() error {
+func run() (retErr error) {
 	if err := handleArgs(); err != nil {
 		return err
+	}
+
+	errReturn := func(fn func() error) {
+		if err := fn(); err != nil && retErr == nil {
+			retErr = err
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -41,11 +47,6 @@ func run() error {
 		os.Stderr, "WxH: %vx%v | frameRate: %v | duration: %v\n",
 		Width, Height, Rate, Duration,
 	)
-
-	frame := image.NewNRGBA(image.Rect(0, 0, Width+4, Height))
-
-	frames := make(chan *frameloop.Frame, 1)
-	frameSent := make(chan *frameloop.Frame, 1)
 
 	// Set up the animation
 	gb, pos, err := setupAnimation()
@@ -58,12 +59,24 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	defer errReturn(rawVideo.Close)
 
 	// Start the frame output loop
+	frames := make(chan *frameloop.Frame, 1)
+	frameSent := make(chan *frameloop.Frame, 1)
+
 	fl := frameloop.New(ctx, rawVideo, Rate, frames, frameSent)
-	defer fl.Stop()
+	defer errReturn(fl.StopWait)
+
+	// Generate and send the first frame
+
+	// This demonstrates that sub-images work, by creating a larger
+	// frame buffer that we render to, and using sub-images to move the
+	// image back and forth in the resulting output.
+	frame := image.NewNRGBA(image.Rect(0, 0, Width+4, Height))
 
 	gb.Draw(frame, pos, draw.Src)
+
 	subFrame := frame.SubImage(image.Rect(0, 0, Width, Height))
 	frames <- subFrame.(*frameloop.Frame)
 
@@ -89,18 +102,6 @@ func run() error {
 
 	// Wait for the last frame to have been sent
 	fl.WaitFrame()
-
-	// Stop the frame loop, wait for it to be done
-	fl.Stop()
-	<-fl.Done()
-	if err := fl.Err(); err != nil {
-		return err
-	}
-
-	// Shut down the encoder
-	if err := rawVideo.Close(); err != nil {
-		return err
-	}
 
 	return nil
 }
